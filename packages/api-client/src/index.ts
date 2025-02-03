@@ -1,4 +1,3 @@
-import { stringify } from 'query-string';
 import type { Serialized } from '@rocket.chat/core-typings';
 import type {
 	MatchPathPattern,
@@ -8,11 +7,13 @@ import type {
 	PathWithoutParamsFor,
 	PathWithParamsFor,
 } from '@rocket.chat/rest-typings';
+import { stringify } from 'query-string';
 
+import type { Credentials } from './Credentials';
 import type { Middleware, RestClientInterface } from './RestClientInterface';
 import { hasRequiredTwoFactorMethod, isTotpInvalidError, isTotpRequiredError } from './errors';
 
-export { RestClientInterface };
+export { RestClientInterface, Credentials };
 
 const pipe =
 	<T extends (...args: any[]) => any>(fn: T) =>
@@ -60,25 +61,9 @@ export class RestClient implements RestClientInterface {
 
 	private headers: Record<string, string> = {};
 
-	private credentials:
-		| {
-				'X-User-Id': string;
-				'X-Auth-Token': string;
-		  }
-		| undefined;
+	private credentials: Credentials | undefined;
 
-	constructor({
-		baseUrl,
-		credentials,
-		headers = {},
-	}: {
-		baseUrl: string;
-		credentials?: {
-			'X-User-Id': string;
-			'X-Auth-Token': string;
-		};
-		headers?: Record<string, string>;
-	}) {
+	constructor({ baseUrl, credentials, headers = {} }: { baseUrl: string; credentials?: Credentials; headers?: Record<string, string> }) {
 		this.baseUrl = `${baseUrl}/api`;
 		this.setCredentials(credentials);
 		this.headers = headers;
@@ -216,7 +201,7 @@ export class RestClient implements RestClientInterface {
 			? {
 					'X-User-Id': credentials['X-User-Id'],
 					'X-Auth-Token': credentials['X-Auth-Token'],
-			  }
+				}
 			: {};
 	}
 
@@ -234,7 +219,9 @@ export class RestClient implements RestClientInterface {
 				return Promise.reject(response);
 			}
 
-			const error = await response.json();
+			const clone = response.clone();
+
+			const error = await clone.json();
 
 			if ((isTotpRequiredError(error) || isTotpInvalidError(error)) && hasRequiredTwoFactorMethod(error) && this.twoFactorHandler) {
 				const method2fa = 'details' in error ? error.details.method : 'password';
@@ -265,7 +252,7 @@ export class RestClient implements RestClientInterface {
 		return data ? stringify(data, { arrayFormat: 'bracket' }) : '';
 	}
 
-	upload: RestClientInterface['upload'] = (endpoint, params, events) => {
+	upload: RestClientInterface['upload'] = (endpoint, params, events, options = {}) => {
 		if (!params) {
 			throw new Error('Missing params');
 		}
@@ -281,7 +268,7 @@ export class RestClient implements RestClientInterface {
 		});
 
 		xhr.open('POST', `${this.baseUrl}${`/${endpoint}`.replace(/\/+/, '/')}`, true);
-		Object.entries(this.getCredentialsAsHeaders()).forEach(([key, value]) => {
+		Object.entries({ ...this.getCredentialsAsHeaders(), ...options.headers }).forEach(([key, value]) => {
 			xhr.setRequestHeader(key, value);
 		});
 

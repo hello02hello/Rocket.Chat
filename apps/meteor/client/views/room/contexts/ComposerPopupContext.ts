@@ -10,6 +10,7 @@ export type ComposerPopupOption<T extends { _id: string; sort?: number } = { _id
 
 	trigger?: string;
 	triggerAnywhere?: boolean;
+	triggerLength?: number;
 
 	suffix?: string;
 	prefix?: string;
@@ -20,6 +21,7 @@ export type ComposerPopupOption<T extends { _id: string; sort?: number } = { _id
 	getValue: (item: T) => string;
 
 	renderItem?: ({ item }: { item: T }) => ReactElement;
+	disabled?: boolean;
 };
 
 export type ComposerPopupContextValue = ComposerPopupOption[];

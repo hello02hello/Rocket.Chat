@@ -1,20 +1,23 @@
-import type { ReactElement } from 'react';
-import React, { useEffect, Suspense } from 'react';
-import { useSyncExternalStore } from 'use-sync-external-store/shim';
+import { useEffect, Suspense, useSyncExternalStore } from 'react';
 
-import { useAnalytics } from '../../../app/analytics/client/loadScript';
-import { appLayout } from '../../lib/appLayout';
+import DocumentTitleWrapper from './DocumentTitleWrapper';
 import PageLoading from './PageLoading';
 import { useEscapeKeyStroke } from './hooks/useEscapeKeyStroke';
 import { useGoogleTagManager } from './hooks/useGoogleTagManager';
 import { useMessageLinkClicks } from './hooks/useMessageLinkClicks';
+import { useAnalytics } from '../../../app/analytics/client/loadScript';
+import { useNextcloud } from '../../../app/nextcloud/client/useNextcloud';
+import { useAnalyticsEventTracking } from '../../hooks/useAnalyticsEventTracking';
+import { useLoadRoomForAllowedAnonymousRead } from '../../hooks/useLoadRoomForAllowedAnonymousRead';
+import { useNotifyUser } from '../../hooks/useNotifyUser';
+import { appLayout } from '../../lib/appLayout';
 
-const AppLayout = (): ReactElement => {
+const AppLayout = () => {
 	useEffect(() => {
 		document.body.classList.add('color-primary-font-color', 'rcx-content--main');
 
 		return () => {
-			document.body.classList.add('color-primary-font-color', 'rcx-content--main');
+			document.body.classList.remove('color-primary-font-color', 'rcx-content--main');
 		};
 	}, []);
 
@@ -22,13 +25,18 @@ const AppLayout = (): ReactElement => {
 	useGoogleTagManager();
 	useAnalytics();
 	useEscapeKeyStroke();
+	useAnalyticsEventTracking();
+	useLoadRoomForAllowedAnonymousRead();
+	useNotifyUser();
+
+	useNextcloud();
 
 	const layout = useSyncExternalStore(appLayout.subscribe, appLayout.getSnapshot);
 
 	return (
-		<>
-			<Suspense fallback={<PageLoading />}>{layout}</Suspense>
-		</>
+		<Suspense fallback={<PageLoading />}>
+			<DocumentTitleWrapper>{layout}</DocumentTitleWrapper>
+		</Suspense>
 	);
 };
 

@@ -1,13 +1,13 @@
 import { AppStatus } from '@rocket.chat/apps-engine/definition/AppStatus';
-import { Settings, Users } from '@rocket.chat/models';
 import type { ProxiedApp } from '@rocket.chat/apps-engine/server/ProxiedApp';
 import { cronJobs } from '@rocket.chat/cron';
+import { Settings, Users } from '@rocket.chat/models';
 import { serverFetch as fetch } from '@rocket.chat/server-fetch';
 
 import { Apps } from './orchestrator';
 import { getWorkspaceAccessToken } from '../../../app/cloud/server';
-import { sendMessagesToAdmins } from '../../../server/lib/sendMessagesToAdmins';
 import { i18n } from '../../../server/lib/i18n';
+import { sendMessagesToAdmins } from '../../../server/lib/sendMessagesToAdmins';
 
 const notifyAdminsAboutInvalidApps = async function _notifyAdminsAboutInvalidApps(apps?: ProxiedApp[]) {
 	if (!apps) {
@@ -57,7 +57,7 @@ const notifyAdminsAboutRenewedApps = async function _notifyAdminsAboutRenewedApp
 	}
 
 	const renewedApps = apps.filter(
-		(app) => app.getStatus() === AppStatus.DISABLED && app.getPreviousStatus() === AppStatus.INVALID_LICENSE_DISABLED,
+		async (app) => (await app.getStatus()) === AppStatus.DISABLED && app.getPreviousStatus() === AppStatus.INVALID_LICENSE_DISABLED,
 	);
 
 	if (renewedApps.length === 0) {
