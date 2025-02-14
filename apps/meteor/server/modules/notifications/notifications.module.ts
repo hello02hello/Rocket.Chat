@@ -1,9 +1,10 @@
-import type { IStreamer, IStreamerConstructor, IPublication } from 'meteor/rocketchat:streamer';
-import type { ISubscription, IOmnichannelRoom, IUser } from '@rocket.chat/core-typings';
-import { Rooms, Subscriptions, Users, Settings } from '@rocket.chat/models';
 import { Authorization, VideoConf } from '@rocket.chat/core-services';
-import type { StreamerCallbackArgs, StreamKeys, StreamNames } from '@rocket.chat/ui-contexts';
+import type { ISubscription, IOmnichannelRoom, IUser } from '@rocket.chat/core-typings';
+import type { StreamerCallbackArgs, StreamKeys, StreamNames } from '@rocket.chat/ddp-client';
+import { Rooms, Subscriptions, Users, Settings } from '@rocket.chat/models';
+import type { IStreamer, IStreamerConstructor, IPublication } from 'meteor/rocketchat:streamer';
 
+import type { ImporterProgress } from '../../../app/importer/server/classes/ImporterProgress';
 import { emit, StreamPresence } from '../../../app/notifications/server/lib/Presence';
 import { SystemLogger } from '../../lib/logger/system';
 
@@ -256,7 +257,7 @@ export class NotificationsModule {
 
 		this.streamRoomUsers.allowRead('none');
 		this.streamRoomUsers.allowWrite(async function (eventName, ...args: any[]) {
-			const [roomId, e] = eventName.split('/') as typeof eventName extends `${infer K}/${infer E}` ? [K, E] : never;
+			const [roomId, e] = eventName.split('/');
 			if (!this.userId) {
 				const room = await Rooms.findOneById<IOmnichannelRoom>(roomId, {
 					projection: { 't': 1, 'servedBy._id': 1 },
@@ -363,7 +364,7 @@ export class NotificationsModule {
 			return Authorization.hasAtLeastOnePermission(this.userId, ['manage-outgoing-integrations', 'manage-own-outgoing-integrations']);
 		});
 
-		this.streamLivechatRoom.allowRead(async function (roomId, extraData) {
+		this.streamLivechatRoom.allowRead(async (roomId, extraData) => {
 			const room = await Rooms.findOneById<Pick<IOmnichannelRoom, 't' | 'v'>>(roomId, {
 				projection: { _id: 0, t: 1, v: 1 },
 			});
@@ -482,9 +483,9 @@ export class NotificationsModule {
 		this.streamPresence.allowWrite('none');
 	}
 
-	notifyAll<E extends StreamKeys<'notify-all'>>(eventName: E, ...args: StreamerCallbackArgs<'notify-all', E>): void {
-		return this.streamAll.emit(eventName, ...args);
-	}
+	// notifyAll<E extends StreamKeys<'notify-all'>>(eventName: E, ...args: StreamerCallbackArgs<'notify-all', E>): void {
+	// 	return this.streamAll.emit(eventName, ...args);
+	// }
 
 	notifyLogged<E extends StreamKeys<'notify-logged'>>(eventName: E, ...args: StreamerCallbackArgs<'notify-logged', E>): void {
 		return this.streamLogged.emit(eventName, ...args);
@@ -530,37 +531,12 @@ export class NotificationsModule {
 		return this.streamUser.emitWithoutBroadcast(`${userId}/${eventName}`, ...args);
 	}
 
-	sendPresence(uid: string, ...args: [username: string, statusChanged: 0 | 1 | 2 | 3, statusText: string | undefined]): void {
-		// if (this.debug === true) {
-		// 	console.log('notifyUserAndBroadcast', [userId, eventName, ...args]);
-		// }
-		emit(uid, args as any);
-		return this.streamPresence.emitWithoutBroadcast(uid, ...args);
+	sendPresence(uid: string, ...args: [username: string, status?: 0 | 1 | 2 | 3, statusText?: string]): void {
+		emit(uid, [args]);
+		return this.streamPresence.emitWithoutBroadcast(uid, args);
 	}
 
-	progressUpdated(progress: {
-		rate: number;
-		count?: { completed: number; total: number };
-		step?:
-			| 'importer_new'
-			| 'importer_uploading'
-			| 'importer_downloading_file'
-			| 'importer_file_loaded'
-			| 'importer_preparing_started'
-			| 'importer_preparing_users'
-			| 'importer_preparing_channels'
-			| 'importer_preparing_messages'
-			| 'importer_user_selection'
-			| 'importer_importing_started'
-			| 'importer_importing_users'
-			| 'importer_importing_channels'
-			| 'importer_importing_messages'
-			| 'importer_importing_files'
-			| 'importer_finishing'
-			| 'importer_done'
-			| 'importer_import_failed'
-			| 'importer_import_cancelled';
-	}): void {
+	progressUpdated(progress: { rate: number } | ImporterProgress): void {
 		this.streamImporters.emit('progress', progress);
 	}
 }

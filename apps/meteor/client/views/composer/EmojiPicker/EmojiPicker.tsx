@@ -1,5 +1,5 @@
-import { TextInput, Icon, Button, Divider, Dropdown } from '@rocket.chat/fuselage';
-import { useLocalStorage, useMediaQuery, useOutsideClick } from '@rocket.chat/fuselage-hooks';
+import { TextInput, Icon, Button, Divider } from '@rocket.chat/fuselage';
+import { useMediaQuery, useMergedRefs, useOutsideClick } from '@rocket.chat/fuselage-hooks';
 import {
 	EmojiPickerCategoryHeader,
 	EmojiPickerContainer,
@@ -10,27 +10,20 @@ import {
 	EmojiPickerPreview,
 } from '@rocket.chat/ui-client';
 import { useTranslation, usePermission, useRoute } from '@rocket.chat/ui-contexts';
-import type { ChangeEvent, KeyboardEvent, MouseEvent, RefObject } from 'react';
-import React, { useLayoutEffect, useState, useEffect, useRef, useCallback } from 'react';
+import type { ChangeEvent, KeyboardEvent, MouseEvent, RefObject, UIEvent } from 'react';
+import { useLayoutEffect, useState, useEffect, useRef } from 'react';
 import type { VirtuosoHandle } from 'react-virtuoso';
 
-import type { EmojiItem, EmojiByCategory, EmojiCategoryPosition } from '../../../../app/emoji/client';
-import {
-	emoji,
-	updateRecent,
-	getCategoriesList,
-	createEmojiList,
-	getEmojisBySearchTerm,
-	createPickerEmojis,
-	CUSTOM_CATEGORY,
-} from '../../../../app/emoji/client';
-import { usePreviewEmoji } from '../../../contexts/EmojiPickerContext';
-import { useIsVisible } from '../../room/hooks/useIsVisible';
 import CategoriesResult from './CategoriesResult';
 import EmojiPickerCategoryItem from './EmojiPickerCategoryItem';
+import EmojiPickerDropdown from './EmojiPickerDropDown';
 import SearchingResult from './SearchingResult';
 import ToneSelector from './ToneSelector';
 import ToneSelectorWrapper from './ToneSelector/ToneSelectorWrapper';
+import { emoji, getCategoriesList, getEmojisBySearchTerm } from '../../../../app/emoji/client';
+import type { EmojiItem } from '../../../../app/emoji/client';
+import { usePreviewEmoji, useEmojiPickerData } from '../../../contexts/EmojiPickerContext';
+import { useIsVisible } from '../../room/hooks/useIsVisible';
 
 type EmojiPickerProps = {
 	reference: Element;
@@ -38,37 +31,43 @@ type EmojiPickerProps = {
 	onPickEmoji: (emoji: string) => void;
 };
 
-const DEFAULT_ITEMS_LIMIT = 90;
-
 const EmojiPicker = ({ reference, onClose, onPickEmoji }: EmojiPickerProps) => {
 	const t = useTranslation();
 
 	const ref = useRef<Element | null>(reference);
-	const categoriesPosition = useRef<EmojiCategoryPosition[]>([]);
-	const textInputRef = useRef<HTMLInputElement>(null);
 	const virtuosoRef = useRef<VirtuosoHandle>(null);
 	const emojiContainerRef = useRef<HTMLDivElement>(null);
 
-	const isInputVisible = useIsVisible(textInputRef);
+	const [isVisibleRef, isInputVisible] = useIsVisible();
+	const textInputRef = useRef<HTMLInputElement>();
+
+	const mergedTextInputRef = useMergedRefs(isVisibleRef, textInputRef);
 
 	const emojiCategories = getCategoriesList();
-	const [emojiListByCategory, setEmojiListByCategory] = useState<EmojiByCategory[]>([]);
 
 	const canManageEmoji = usePermission('manage-emoji');
 	const customEmojiRoute = useRoute('emoji-custom');
 
-	const [recentEmojis, setRecentEmojis] = useLocalStorage<string[]>('emoji.recent', []);
-	const [actualTone, setActualTone] = useLocalStorage('emoji.tone', 0);
-
 	const [searching, setSearching] = useState(false);
-	const [customItemsLimit, setCustomItemsLimit] = useState(DEFAULT_ITEMS_LIMIT);
 	const [searchTerm, setSearchTerm] = useState('');
 	const [searchResults, setSearchResults] = useState<EmojiItem[]>([]);
-	const [currentCategory, setCurrentCategory] = useState('recent');
 
 	const { emojiToPreview, handleRemovePreview } = usePreviewEmoji();
+	const {
+		recentEmojis,
+		setCurrentCategory,
+		addRecentEmoji,
+		setRecentEmojis,
+		actualTone,
+		currentCategory,
+		categoriesPosition,
+		getEmojiListsByCategory,
+		customItemsLimit,
+		setActualTone,
+		setCustomItemsLimit,
+	} = useEmojiPickerData();
 
-	useEffect(() => () => handleRemovePreview(), []);
+	useEffect(() => () => handleRemovePreview(), [handleRemovePreview]);
 
 	const scrollCategories = useMediaQuery('(width < 340px)');
 
@@ -97,46 +96,11 @@ const EmojiPicker = ({ reference, onClose, onPickEmoji }: EmojiPickerProps) => {
 		};
 	}, [reference]);
 
-	const showInitialCategory = useCallback((customEmojiList) => {
-		handleGoToCategory(customEmojiList.length > 0 ? 0 : 1);
-	}, []);
-
 	useEffect(() => {
 		if (textInputRef.current && isInputVisible) {
 			textInputRef.current.focus();
 		}
 	}, [isInputVisible]);
-
-	useEffect(() => {
-		if (recentEmojis?.length > 0) {
-			updateRecent(recentEmojis);
-		}
-
-		const emojis = createPickerEmojis(customItemsLimit, actualTone, recentEmojis, setRecentEmojis);
-		setEmojiListByCategory(emojis);
-
-		if (recentEmojis.length === 0 && currentCategory === 'recent') {
-			const customEmojiList = emojis.filter(({ key }) => key === 'rocket');
-			showInitialCategory(customEmojiList);
-		}
-	}, [actualTone, recentEmojis, customItemsLimit, currentCategory, setRecentEmojis, showInitialCategory]);
-
-	// TODO: improve this update
-	const updateEmojiListByCategory = (categoryKey: string, limit: number = DEFAULT_ITEMS_LIMIT) => {
-		const result = emojiListByCategory.map((category) => {
-			return categoryKey === category.key
-				? {
-						...category,
-						emojis: {
-							list: createEmojiList(category.key, null, recentEmojis, setRecentEmojis),
-							limit: category.key === CUSTOM_CATEGORY ? limit | customItemsLimit : null,
-						},
-				  }
-				: category;
-		});
-
-		setEmojiListByCategory(result);
-	};
 
 	const handleSelectEmoji = (event: MouseEvent<HTMLElement>) => {
 		event.stopPropagation();
@@ -164,23 +128,9 @@ const EmojiPicker = ({ reference, onClose, onPickEmoji }: EmojiPickerProps) => {
 		onClose();
 	};
 
-	const addRecentEmoji = (_emoji: string) => {
-		const recent = recentEmojis || [];
-		const pos = recent.indexOf(_emoji as never);
-
-		if (pos !== -1) {
-			recent.splice(pos, 1);
-		}
-
-		recent.unshift(_emoji);
-
-		// limit recent emojis to 27 (3 rows of 9)
-		recent.splice(27);
-
-		setRecentEmojis(recent);
-		emoji.packages.base.emojisByCategory.recent = recent;
-		updateEmojiListByCategory('recent');
-	};
+	useEffect(() => {
+		setCurrentCategory('recent');
+	}, [setCurrentCategory]);
 
 	const handleSearch = (e: ChangeEvent<HTMLInputElement>) => {
 		setSearchTerm(e.target.value);
@@ -202,22 +152,22 @@ const EmojiPicker = ({ reference, onClose, onPickEmoji }: EmojiPickerProps) => {
 	};
 
 	const handleLoadMore = () => {
-		setCustomItemsLimit((prevState) => prevState + 90);
+		setCustomItemsLimit(customItemsLimit + 90);
 	};
 
-	// FIXME: not able to type the event scroll yet due the virtuoso version
-	const handleScroll = (event: any) => {
-		const scrollTop = event?.scrollTop;
-		const last = categoriesPosition.current?.filter((pos) => pos.top <= scrollTop).pop();
+	const handleScroll = (event: UIEvent<HTMLDivElement>) => {
+		const categoryMargin = 12;
+		const { scrollTop } = event.currentTarget;
 
-		if (!last) {
+		const lastCategory = categoriesPosition.current
+			?.filter((category, index = 1) => category.top - categoryMargin * index <= scrollTop)
+			.pop();
+
+		if (!lastCategory) {
 			return;
 		}
 
-		const { el } = last;
-		const category = el.id.replace('emoji-list-category-', '');
-
-		setCurrentCategory(category);
+		setCurrentCategory(lastCategory.key);
 	};
 
 	const handleGoToCategory = (categoryIndex: number) => {
@@ -231,12 +181,13 @@ const EmojiPicker = ({ reference, onClose, onPickEmoji }: EmojiPickerProps) => {
 	};
 
 	return (
-		<Dropdown reference={ref as RefObject<HTMLElement>} ref={emojiContainerRef}>
+		<EmojiPickerDropdown reference={ref as RefObject<HTMLElement>} ref={emojiContainerRef}>
 			<EmojiPickerContainer role='dialog' aria-label={t('Emoji_picker')} onKeyDown={handleKeyDown}>
 				<EmojiPickerHeader>
 					<TextInput
+						// FIXME: remove autoFocus prop when rewriting the emojiPicker dropdown
 						autoFocus
-						ref={textInputRef}
+						ref={mergedTextInputRef}
 						value={searchTerm}
 						onChange={handleSearch}
 						addon={<Icon name='magnifier' size='x20' />}
@@ -244,7 +195,7 @@ const EmojiPicker = ({ reference, onClose, onPickEmoji }: EmojiPickerProps) => {
 						aria-label={t('Search')}
 					/>
 				</EmojiPickerHeader>
-				<EmojiPickerCategoryHeader role='tablist' {...(scrollCategories && { overflowX: 'scroll', h: 'x64' })}>
+				<EmojiPickerCategoryHeader role='tablist' {...(scrollCategories && { style: { overflowX: 'scroll' } })}>
 					{emojiCategories.map((category, index) => (
 						<EmojiPickerCategoryItem
 							key={category.key}
@@ -255,14 +206,13 @@ const EmojiPicker = ({ reference, onClose, onPickEmoji }: EmojiPickerProps) => {
 						/>
 					))}
 				</EmojiPickerCategoryHeader>
-				<Divider mb='x12' />
+				<Divider mb={12} />
 				<EmojiPickerListArea role='tabpanel'>
 					{searching && <SearchingResult searchResults={searchResults} handleSelectEmoji={handleSelectEmoji} />}
 					{!searching && (
 						<CategoriesResult
 							ref={virtuosoRef}
-							emojiListByCategory={emojiListByCategory}
-							categoriesPosition={categoriesPosition}
+							emojiListByCategory={getEmojiListsByCategory()}
 							customItemsLimit={customItemsLimit}
 							handleLoadMore={handleLoadMore}
 							handleSelectEmoji={handleSelectEmoji}
@@ -285,7 +235,7 @@ const EmojiPicker = ({ reference, onClose, onPickEmoji }: EmojiPickerProps) => {
 				</EmojiPickerPreviewArea>
 				<EmojiPickerFooter>{t('Powered_by_JoyPixels')}</EmojiPickerFooter>
 			</EmojiPickerContainer>
-		</Dropdown>
+		</EmojiPickerDropdown>
 	);
 };
 
