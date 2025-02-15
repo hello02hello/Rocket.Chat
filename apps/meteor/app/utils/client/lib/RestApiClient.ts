@@ -1,9 +1,9 @@
+/* eslint-disable react-hooks/rules-of-hooks */
 import { RestClient } from '@rocket.chat/api-client';
-import { Meteor } from 'meteor/meteor';
 import { Accounts } from 'meteor/accounts-base';
 
-import { baseURI } from '../../../../client/lib/baseURI';
 import { invokeTwoFactorModal } from '../../../../client/lib/2fa/process2faReturn';
+import { baseURI } from '../../../../client/lib/baseURI';
 
 class RestApiClient extends RestClient {
 	getCredentials():
@@ -12,7 +12,10 @@ class RestApiClient extends RestClient {
 				'X-Auth-Token': string;
 		  }
 		| undefined {
-		const [uid, token] = [Meteor._localStorage.getItem(Accounts.USER_ID_KEY), Meteor._localStorage.getItem(Accounts.LOGIN_TOKEN_KEY)];
+		const [uid, token] = [
+			Accounts.storageLocation.getItem(Accounts.USER_ID_KEY),
+			Accounts.storageLocation.getItem(Accounts.LOGIN_TOKEN_KEY),
+		];
 
 		if (!uid || !token) {
 			return;
@@ -37,7 +40,7 @@ APIClient.handleTwoFactorChallenge(invokeTwoFactorModal);
  * This middleware will throw the error object instead.
  * */
 
-APIClient.use(async function (request, next) {
+APIClient.use(async (request, next) => {
 	try {
 		return await next(...request);
 	} catch (error) {

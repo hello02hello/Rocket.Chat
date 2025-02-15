@@ -1,8 +1,8 @@
-import { Box, PasswordInput, FieldGroup, Field } from '@rocket.chat/fuselage';
-import { useAutoFocus, useUniqueId } from '@rocket.chat/fuselage-hooks';
-import { useTranslation } from '@rocket.chat/ui-contexts';
+import { Box, PasswordInput, FieldGroup, Field, FieldLabel, FieldRow, FieldError } from '@rocket.chat/fuselage';
+import { useAutoFocus } from '@rocket.chat/fuselage-hooks';
 import type { ReactElement, ChangeEvent, Ref, SyntheticEvent } from 'react';
-import React, { useState } from 'react';
+import { useId, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import GenericModal from '../GenericModal';
 import type { OnConfirm } from './TwoFactorModal';
@@ -15,7 +15,7 @@ type TwoFactorPasswordModalProps = {
 };
 
 const TwoFactorPasswordModal = ({ onConfirm, onClose, invalidAttempt }: TwoFactorPasswordModalProps): ReactElement => {
-	const t = useTranslation();
+	const { t } = useTranslation();
 	const [code, setCode] = useState<string>('');
 	const ref = useAutoFocus();
 
@@ -28,7 +28,7 @@ const TwoFactorPasswordModal = ({ onConfirm, onClose, invalidAttempt }: TwoFacto
 		setCode(currentTarget.value);
 	};
 
-	const id = useUniqueId();
+	const id = useId();
 
 	return (
 		<GenericModal
@@ -43,10 +43,10 @@ const TwoFactorPasswordModal = ({ onConfirm, onClose, invalidAttempt }: TwoFacto
 		>
 			<FieldGroup>
 				<Field>
-					<Field.Label alignSelf='stretch' htmlFor={id}>
+					<FieldLabel alignSelf='stretch' htmlFor={id}>
 						{t('For_your_security_you_must_enter_your_current_password_to_continue')}
-					</Field.Label>
-					<Field.Row>
+					</FieldLabel>
+					<FieldRow>
 						<PasswordInput
 							id={id}
 							ref={ref as Ref<HTMLInputElement>}
@@ -54,8 +54,8 @@ const TwoFactorPasswordModal = ({ onConfirm, onClose, invalidAttempt }: TwoFacto
 							onChange={onChange}
 							placeholder={t('Password')}
 						></PasswordInput>
-					</Field.Row>
-					{invalidAttempt && <Field.Error>{t('Invalid_password')}</Field.Error>}
+					</FieldRow>
+					{invalidAttempt && <FieldError>{t('Invalid_password')}</FieldError>}
 				</Field>
 			</FieldGroup>
 		</GenericModal>

@@ -1,4 +1,4 @@
-import mem from 'mem';
+import type { EventSignatures } from '@rocket.chat/core-services';
 import type {
 	ISubscription,
 	IUser,
@@ -13,12 +13,12 @@ import type {
 	IIntegration,
 	IEmailInbox,
 	IPbxEvent,
-	SettingValue,
 	ILivechatInquiryRecord,
 	IRole,
 	ILivechatPriority,
 } from '@rocket.chat/core-typings';
 import {
+	dbWatchersDisabled,
 	Subscriptions,
 	Messages,
 	Users,
@@ -36,10 +36,10 @@ import {
 	Permissions,
 	LivechatPriority,
 } from '@rocket.chat/models';
-import type { EventSignatures } from '@rocket.chat/core-services';
+import type { DatabaseWatcher } from '@rocket.chat/models';
 
+import { getMessageToBroadcast } from '../../../app/lib/server/lib/notifyListener';
 import { subscriptionFields, roomFields } from '../../../lib/publishFields';
-import type { DatabaseWatcher } from '../../database/DatabaseWatcher';
 
 type BroadcastCallback = <T extends keyof EventSignatures>(event: T, ...args: Parameters<EventSignatures[T]>) => Promise<void>;
 
@@ -65,51 +65,21 @@ export function isWatcherRunning(): boolean {
 }
 
 export function initWatchers(watcher: DatabaseWatcher, broadcast: BroadcastCallback): void {
-	const getSettingCached = mem(async (setting: string): Promise<SettingValue> => Settings.getValueById(setting), { maxAge: 10000 });
-
-	const getUserNameCached = mem(
-		async (userId: string): Promise<string | undefined> => {
-			const user = await Users.findOne<Pick<IUser, 'name'>>(userId, { projection: { name: 1 } });
-			return user?.name;
-		},
-		{ maxAge: 10000 },
-	);
-
-	watcher.on<IMessage>(Messages.getCollectionName(), async ({ clientAction, id, data }) => {
-		switch (clientAction) {
-			case 'inserted':
-			case 'updated':
-				const message = data ?? (await Messages.findOneById(id));
-				if (!message) {
-					return;
-				}
-
-				if (message._hidden !== true && message.imported == null) {
-					const UseRealName = (await getSettingCached('UI_Use_Real_Name')) === true;
-
-					if (UseRealName) {
-						if (message.u?._id) {
-							const name = await getUserNameCached(message.u._id);
-							if (name) {
-								message.u.name = name;
-							}
-						}
-
-						if (message.mentions?.length) {
-							for await (const mention of message.mentions) {
-								const name = await getUserNameCached(mention._id);
-								if (name) {
-									mention.name = name;
-								}
-							}
-						}
+	// watch for changes on the database and broadcast them to the other instances
+	if (!dbWatchersDisabled) {
+		watcher.on<IMessage>(Messages.getCollectionName(), async ({ clientAction, id, data }) => {
+			switch (clientAction) {
+				case 'inserted':
+				case 'updated':
+					const message = await getMessageToBroadcast({ id, data });
+					if (!message) {
+						return;
 					}
-
-					void broadcast('watch.messages', { clientAction, message });
-				}
-				break;
-		}
-	});
+					void broadcast('watch.messages', { message });
+					break;
+			}
+		});
+	}
 
 	watcher.on<ISubscription>(Subscriptions.getCollectionName(), async ({ clientAction, id, data, diff }) => {
 		switch (clientAction) {
@@ -120,59 +90,62 @@ export function initWatchers(watcher: DatabaseWatcher, broadcast: BroadcastCallb
 				}
 
 				// Override data cuz we do not publish all fields
-				const subscription = await Subscriptions.findOneById<
-					Pick<
-						ISubscription,
-						| 't'
-						| 'ts'
-						| 'ls'
-						| 'lr'
-						| 'name'
-						| 'fname'
-						| 'rid'
-						| 'code'
-						| 'f'
-						| 'u'
-						| 'open'
-						| 'alert'
-						| 'roles'
-						| 'unread'
-						| 'prid'
-						| 'userMentions'
-						| 'groupMentions'
-						| 'archived'
-						| 'audioNotificationValue'
-						| 'desktopNotifications'
-						| 'mobilePushNotifications'
-						| 'emailNotifications'
-						| 'desktopPrefOrigin'
-						| 'mobilePrefOrigin'
-						| 'emailPrefOrigin'
-						| 'unreadAlert'
-						| '_updatedAt'
-						| 'blocked'
-						| 'blocker'
-						| 'autoTranslate'
-						| 'autoTranslateLanguage'
-						| 'disableNotifications'
-						| 'hideUnreadStatus'
-						| 'hideMentionStatus'
-						| 'muteGroupMentions'
-						| 'ignored'
-						| 'E2EKey'
-						| 'E2ESuggestedKey'
-						| 'tunread'
-						| 'tunreadGroup'
-						| 'tunreadUser'
+				const subscription =
+					data ||
+					(await Subscriptions.findOneById<
+						Pick<
+							ISubscription,
+							| 't'
+							| 'ts'
+							| 'ls'
+							| 'lr'
+							| 'name'
+							| 'fname'
+							| 'rid'
+							| 'code'
+							| 'f'
+							| 'u'
+							| 'open'
+							| 'alert'
+							| 'roles'
+							| 'unread'
+							| 'prid'
+							| 'userMentions'
+							| 'groupMentions'
+							| 'archived'
+							| 'audioNotificationValue'
+							| 'desktopNotifications'
+							| 'mobilePushNotifications'
+							| 'emailNotifications'
+							| 'desktopPrefOrigin'
+							| 'mobilePrefOrigin'
+							| 'emailPrefOrigin'
+							| 'unreadAlert'
+							| '_updatedAt'
+							| 'blocked'
+							| 'blocker'
+							| 'autoTranslate'
+							| 'autoTranslateLanguage'
+							| 'disableNotifications'
+							| 'hideUnreadStatus'
+							| 'hideMentionStatus'
+							| 'muteGroupMentions'
+							| 'ignored'
+							| 'E2EKey'
+							| 'E2ESuggestedKey'
+							| 'oldRoomKeys'
+							| 'tunread'
+							| 'tunreadGroup'
+							| 'tunreadUser'
 
-						// Omnichannel fields
-						| 'department'
-						| 'v'
-						| 'onHold'
-					>
-				>(id, {
-					projection: subscriptionFields,
-				});
+							// Omnichannel fields
+							| 'department'
+							| 'v'
+							| 'onHold'
+						>
+					>(id, {
+						projection: subscriptionFields,
+					}));
 
 				if (!subscription) {
 					return;
@@ -183,7 +156,7 @@ export function initWatchers(watcher: DatabaseWatcher, broadcast: BroadcastCallb
 
 			case 'removed': {
 				const trash = (await Subscriptions.trashFindOneById(id, {
-					projection: { u: 1, rid: 1 },
+					projection: { u: 1, rid: 1, t: 1 },
 				})) as Pick<ISubscription, 'u' | 'rid' | '_id'> | undefined;
 				const subscription = trash || { _id: id };
 				void broadcast('watch.subscriptions', { clientAction, subscription });
@@ -363,7 +336,13 @@ export function initWatchers(watcher: DatabaseWatcher, broadcast: BroadcastCallb
 	});
 
 	watcher.on<ILoginServiceConfiguration>(LoginServiceConfiguration.getCollectionName(), async ({ clientAction, id }) => {
+		if (clientAction === 'removed') {
+			void broadcast('watch.loginServiceConfiguration', { clientAction, id });
+			return;
+		}
+
 		const data = await LoginServiceConfiguration.findOne<Omit<ILoginServiceConfiguration, 'secret'>>(id, { projection: { secret: 0 } });
+
 		if (!data) {
 			return;
 		}
@@ -372,6 +351,11 @@ export function initWatchers(watcher: DatabaseWatcher, broadcast: BroadcastCallb
 	});
 
 	watcher.on<IInstanceStatus>(InstanceStatus.getCollectionName(), ({ clientAction, id, data, diff }) => {
+		if (clientAction === 'removed') {
+			void broadcast('watch.instanceStatus', { clientAction, id, data: { _id: id } });
+			return;
+		}
+
 		void broadcast('watch.instanceStatus', { clientAction, data, diff, id });
 	});
 
@@ -439,20 +423,15 @@ export function initWatchers(watcher: DatabaseWatcher, broadcast: BroadcastCallb
 		}
 	});
 
-	watcher.on<ILivechatPriority>(LivechatPriority.getCollectionName(), async ({ clientAction, id, data: eventData, diff }) => {
+	watcher.on<ILivechatPriority>(LivechatPriority.getCollectionName(), async ({ clientAction, id, diff }) => {
 		if (clientAction !== 'updated' || !diff || !('name' in diff)) {
 			// For now, we don't support this actions from happening
 			return;
 		}
 
-		const data = eventData ?? (await LivechatPriority.findOne({ _id: id }));
-		if (!data) {
-			return;
-		}
-
 		// This solves the problem of broadcasting, since now, watcher is the one in charge of doing it.
 		// What i don't like is the idea of giving more responsibilities to watcher, even when this works
-		void broadcast('watch.priorities', { clientAction, data, id, diff });
+		void broadcast('watch.priorities', { clientAction, id, diff });
 	});
 
 	watcherStarted = true;

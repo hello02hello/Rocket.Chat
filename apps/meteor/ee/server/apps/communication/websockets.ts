@@ -1,12 +1,11 @@
-/* eslint-disable @typescript-eslint/no-non-null-assertion */
 import type { AppStatus } from '@rocket.chat/apps-engine/definition/AppStatus';
-import type { ISetting as AppsSetting } from '@rocket.chat/apps-engine/definition/settings';
 import { AppStatusUtils } from '@rocket.chat/apps-engine/definition/AppStatus';
-import type { IStreamer } from 'meteor/rocketchat:streamer';
+import type { ISetting as AppsSetting } from '@rocket.chat/apps-engine/definition/settings';
 import { api } from '@rocket.chat/core-services';
+import type { IStreamer } from 'meteor/rocketchat:streamer';
 
-import { SystemLogger } from '../../../../server/lib/logger/system';
 import notifications from '../../../../app/notifications/server/lib/Notifications';
+import { SystemLogger } from '../../../../server/lib/logger/system';
 import type { AppServerOrchestrator } from '../orchestrator';
 import { AppEvents } from './events';
 
@@ -52,7 +51,7 @@ export class AppServerListener {
 	async onAppStatusUpdated({ appId, status }: { appId: string; status: AppStatus }): Promise<void> {
 		const app = this.orch.getManager()?.getOneById(appId);
 
-		if (!app || app.getStatus() === status) {
+		if (!app || (await app.getStatus()) === status) {
 			return;
 		}
 
@@ -77,10 +76,12 @@ export class AppServerListener {
 			setting,
 			when: new Date(),
 		});
+
 		await this.orch
 			.getManager()!
 			.getSettingsManager()
 			.updateAppSetting(appId, setting as any); // TO-DO: fix type of `setting`
+
 		this.clientStreamer.emitWithoutBroadcast(AppEvents.APP_SETTING_UPDATED, { appId, setting });
 	}
 
@@ -91,7 +92,12 @@ export class AppServerListener {
 
 		const appPackage = await this.orch.getAppSourceStorage()!.fetch(storageItem);
 
-		await this.orch.getManager()!.updateLocal(storageItem, appPackage);
+		const isEnabled = AppStatusUtils.isEnabled(storageItem.status);
+		if (isEnabled) {
+			await this.orch.getManager()!.updateAndStartupLocal(storageItem, appPackage);
+		} else {
+			await this.orch.getManager()!.updateAndInitializeLocal(storageItem, appPackage);
+		}
 
 		this.clientStreamer.emitWithoutBroadcast(AppEvents.APP_UPDATED, appId);
 	}
